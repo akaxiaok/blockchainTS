@@ -1,24 +1,33 @@
 import {SHA256} from 'crypto-js';
 
+class Transaction {
+    fromAddress: string;
+    toAddress: string;
+    amount: number;
+
+    constructor(fromAddress: string, toAddress: string, amount: number) {
+        this.fromAddress = fromAddress;
+        this.toAddress = toAddress;
+        this.amount = amount;
+    }
+}
+
 class Block {
     public hash: string;
-    public index: number;
     public timestamp: number;
-    public data: object;
+    public transactions: Array<Transaction>;
     public previousHash: string;
-    private nonce: number;
+    private nonce: number = 0;
 
-    constructor(index: number, timestamp: number, data: object, previousHash: string = '') {
-        this.index = index;
+    constructor(timestamp: number, transactions: Array<Transaction>, previousHash: string = '') {
         this.timestamp = timestamp;
-        this.data = data;
+        this.transactions = transactions;
         this.previousHash = previousHash;
         this.hash = this.calculateHash();
-        this.nonce = 0;
     }
 
     calculateHash(): string {
-        return SHA256(this.index + this.previousHash + this.timestamp + JSON.stringify(this.data) + this.nonce).toString();
+        return SHA256(this.previousHash + this.timestamp + JSON.stringify(this.transactions) + this.nonce).toString();
     }
 
     mineBlock(difficulty: number) {
@@ -32,17 +41,18 @@ class Block {
 }
 
 class BlockChain {
-    public chain: Array<Block>;
-    public difficulty: number;
+    public chain: Array<Block> = [];
+    public difficulty: number = 2;
+    public pendingTransactions: Array<Transaction> = [];
+    public miningRewards: number = 100;
 
     constructor() {
         this.chain = [this.createGenesisBlock()];
-        this.difficulty = 5;
     }
 
 
     createGenesisBlock() {
-        return new Block(0, Date.now(), {message: 'hello world'}, '0');
+        return new Block(Date.now(), [], '0');
     }
 
     getLastBlock(): Block {
@@ -53,6 +63,33 @@ class BlockChain {
         newBlock.previousHash = this.getLastBlock().hash;
         newBlock.mineBlock(this.difficulty);
         this.chain.push(newBlock);
+    }
+
+    minePendingTransactions(miningRewardAddress: string) {
+        this.pendingTransactions.push(new Transaction('0', miningRewardAddress, this.miningRewards));
+        let block = new Block(Date.now(), this.pendingTransactions, this.getLastBlock().hash);
+        block.mineBlock(this.difficulty);
+        this.chain.push(block);
+        this.pendingTransactions = [];
+    }
+
+    createTransaction(transaction: Transaction) {
+        this.pendingTransactions.push(transaction);
+    }
+
+    getBalanceOfAddress(address: string): number {
+        let balance = 0;
+        for (const block of this.chain) {
+            for (const trans of block.transactions) {
+                if (trans.fromAddress === address) {
+                    balance -= trans.amount;
+                }
+                if (trans.toAddress === address) {
+                    balance += trans.amount;
+                }
+            }
+        }
+        return balance;
     }
 
     isChainValid(): boolean {
@@ -75,16 +112,15 @@ class BlockChain {
 
 let blockChain = new BlockChain();
 
-console.log('mine block 1');
-blockChain.addBlock(new Block(1, Date.now(), {count: 1}));
-console.log('mine block 2');
-blockChain.addBlock(new Block(2, Date.now(), {count: 2}));
+const minerAddress = 'miner_address';
 
-// console.log(JSON.stringify(blockChain, null, 2));
+const testAddress1 = 'testAddress1';
+const testAddress2 = 'testAddress2';
 
-console.log('valid?', blockChain.isChainValid());
 
-blockChain.chain[1].data = {count: 5};
-blockChain.chain[1].hash = blockChain.chain[1].calculateHash();
-console.log('valid?', blockChain.isChainValid());
-console.log(SHA256(JSON.stringify(blockChain)).toString());
+blockChain.createTransaction(new Transaction(testAddress1, testAddress2, 10));
+blockChain.createTransaction(new Transaction(testAddress2, testAddress1, 5));
+
+console.log('start the miner:');
+blockChain.minePendingTransactions(minerAddress);
+console.log('Balance of the miner:', blockChain.getBalanceOfAddress(minerAddress));
