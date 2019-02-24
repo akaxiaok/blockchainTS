@@ -1,18 +1,49 @@
 import {SHA256} from 'crypto-js';
+import {ec} from 'elliptic';
 
-class Transaction {
+const ecInstance = new ec('secp256k1');
+
+export class Transaction {
     fromAddress: string;
     toAddress: string;
     amount: number;
+    signature: ec.Signature;
 
     constructor(fromAddress: string, toAddress: string, amount: number) {
         this.fromAddress = fromAddress;
         this.toAddress = toAddress;
         this.amount = amount;
     }
+
+    calculateHash() {
+        return SHA256(this.fromAddress + this.toAddress + this.amount).toString();
+    }
+
+    signTransaction(signingKey: ec.KeyPair) {
+        if (signingKey.getPublic('hex') !== this.fromAddress) {
+            throw new Error('You cannot sign transaction for other wallets!');
+        }
+        const hasTx = this.calculateHash();
+        const sig = signingKey.sign(hasTx, 'base64');
+
+        this.signature = sig.toDER('hex');
+    }
+
+    isValid(): boolean {
+        if (this.fromAddress === '0') {
+            return true
+        }
+        if (!this.signature) {
+            throw new Error('No signature');
+        }
+
+        const publicKey = ecInstance.keyFromPublic(this.fromAddress, 'hex');
+        return publicKey.verify(this.calculateHash(), this.signature);
+    }
+
 }
 
-class Block {
+export class Block {
     public hash: string;
     public timestamp: number;
     public transactions: Array<Transaction>;
@@ -38,9 +69,18 @@ class Block {
         console.log('Block mined:', this.hash);
     }
 
+    hasValidTransactions(): boolean {
+        for (const tx of this.transactions) {
+            if (!tx.isValid()) {
+                return false
+            }
+        }
+        return true;
+    }
+
 }
 
-class BlockChain {
+export class BlockChain {
     public chain: Array<Block> = [];
     public difficulty: number = 2;
     public pendingTransactions: Array<Transaction> = [];
@@ -59,11 +99,6 @@ class BlockChain {
         return this.chain[this.chain.length - 1];
     }
 
-    addBlock(newBlock: Block) {
-        newBlock.previousHash = this.getLastBlock().hash;
-        newBlock.mineBlock(this.difficulty);
-        this.chain.push(newBlock);
-    }
 
     minePendingTransactions(miningRewardAddress: string) {
         this.pendingTransactions.push(new Transaction('0', miningRewardAddress, this.miningRewards));
@@ -73,7 +108,19 @@ class BlockChain {
         this.pendingTransactions = [];
     }
 
-    createTransaction(transaction: Transaction) {
+    addTransaction(transaction: Transaction) {
+        if (!transaction.fromAddress || !transaction.toAddress) {
+            throw new Error('Must have from and to address!');
+        }
+
+        if (!transaction.isValid()) {
+            throw new Error('Transaction not valid!!');
+        }
+
+        if (transaction.amount > this.getBalanceOfAddress(transaction.fromAddress)) {
+            throw new Error('Transaction not valid!!. Someone doesn\'t have enough coins!');
+        }
+
         this.pendingTransactions.push(transaction);
     }
 
@@ -97,10 +144,12 @@ class BlockChain {
             const currentBlock = this.chain[i];
             const previousBlock = this.chain[i - 1];
 
+            if (!currentBlock.hasValidTransactions()) {
+                return false;
+            }
             if (currentBlock.hash !== currentBlock.calculateHash()) {
                 return false;
             }
-
             if (currentBlock.previousHash !== previousBlock.hash) {
                 return false
             }
@@ -109,18 +158,3 @@ class BlockChain {
     }
 
 }
-
-let blockChain = new BlockChain();
-
-const minerAddress = 'miner_address';
-
-const testAddress1 = 'testAddress1';
-const testAddress2 = 'testAddress2';
-
-
-blockChain.createTransaction(new Transaction(testAddress1, testAddress2, 10));
-blockChain.createTransaction(new Transaction(testAddress2, testAddress1, 5));
-
-console.log('start the miner:');
-blockChain.minePendingTransactions(minerAddress);
-console.log('Balance of the miner:', blockChain.getBalanceOfAddress(minerAddress));
