@@ -6,6 +6,7 @@ class Block {
     public timestamp: number;
     public data: object;
     public previousHash: string;
+    private nonce: number;
 
     constructor(index: number, timestamp: number, data: object, previousHash: string = '') {
         this.index = index;
@@ -13,20 +14,30 @@ class Block {
         this.data = data;
         this.previousHash = previousHash;
         this.hash = this.calculateHash();
-
+        this.nonce = 0;
     }
 
     calculateHash(): string {
-        return SHA256(this.index + this.previousHash + this.timestamp + JSON.stringify(this.data)).toString();
+        return SHA256(this.index + this.previousHash + this.timestamp + JSON.stringify(this.data) + this.nonce).toString();
+    }
+
+    mineBlock(difficulty: number) {
+        while (this.hash.substring(0, difficulty) !== Array(difficulty + 1).join('0')) {
+            this.nonce++;
+            this.hash = this.calculateHash();
+        }
+        console.log('Block mined:', this.hash);
     }
 
 }
 
 class BlockChain {
     public chain: Array<Block>;
+    public difficulty: number;
 
     constructor() {
         this.chain = [this.createGenesisBlock()];
+        this.difficulty = 5;
     }
 
 
@@ -40,7 +51,7 @@ class BlockChain {
 
     addBlock(newBlock: Block) {
         newBlock.previousHash = this.getLastBlock().hash;
-        newBlock.hash = newBlock.calculateHash();
+        newBlock.mineBlock(this.difficulty);
         this.chain.push(newBlock);
     }
 
@@ -64,13 +75,16 @@ class BlockChain {
 
 let blockChain = new BlockChain();
 
+console.log('mine block 1');
 blockChain.addBlock(new Block(1, Date.now(), {count: 1}));
+console.log('mine block 2');
 blockChain.addBlock(new Block(2, Date.now(), {count: 2}));
 
-console.log(JSON.stringify(blockChain, null, 2));
+// console.log(JSON.stringify(blockChain, null, 2));
 
 console.log('valid?', blockChain.isChainValid());
 
 blockChain.chain[1].data = {count: 5};
 blockChain.chain[1].hash = blockChain.chain[1].calculateHash();
 console.log('valid?', blockChain.isChainValid());
+console.log(SHA256(JSON.stringify(blockChain)).toString());
